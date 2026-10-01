@@ -1,0 +1,21 @@
+[Unit]
+Description=remote-pc - noVNC + WebSocket bridge + phone trackpad
+After=graphical-session.target remote-vnc.service
+Wants=remote-vnc.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# /pad injects mouse and keyboard via XTEST, so this process needs to talk
+# to :0 just like x11vnc does.
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+# Optional: also listen on your Tailscale/LAN IP for a direct, low-latency
+# path from the phone. Comma-separated.
+#Environment=REMOTE_PC_EXTRA_BINDS=100.x.y.z
+ExecStart=/usr/bin/python3 %h/remote-pc/server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

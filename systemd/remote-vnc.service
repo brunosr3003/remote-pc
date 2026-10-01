@@ -1,0 +1,24 @@
+[Unit]
+Description=x11vnc for desktop :0 - backend for remote-pc browser access
+# No X session means no :0 to capture.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+# -localhost: never listen on the LAN or the internet. The only way in is
+#   through remote-pc (and whatever tunnel/proxy you put in front of it).
+# -rfbauth: password, so a leaked tunnel doesn't hand over the desktop.
+# -xkb -repeat: without them dead keys don't compose and held keys don't
+#   repeat, which breaks both typing and holding an arrow key in a game.
+ExecStart=/usr/bin/x11vnc -display :0 -auth %h/.Xauthority \
+  -rfbauth %h/remote-pc/etc/vncpasswd \
+  -localhost -rfbport 5900 \
+  -forever -shared -noxdamage -xkb -repeat -quiet
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

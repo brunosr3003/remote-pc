@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Trackpad">
+<meta name="theme-color" content="#0d0f14">
+<title>Trackpad</title>
+<style>
+  :root {
+    --bg: #0d0f14;
+    --panel: #161a22;
+    --panel-hi: #1e2430;
+    --line: #262d3a;
+    --ink: #e8ecf4;
+    --dim: #7d879b;
+    --accent: #4d9fff;
+    --ok: #35c97a;
+    --bad: #ff5f56;
+    --gap: 8px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    overscroll-behavior: none;
+    touch-action: none;
+  }
+  #app {
+    display: flex; flex-direction: column; height: 100%;
+    padding: max(env(safe-area-inset-top), 6px) max(env(safe-area-inset-right), 8px)
+             max(env(safe-area-inset-bottom), 8px) max(env(safe-area-inset-left), 8px);
+    gap: var(--gap);
+  }
+
+  /* ---- status bar */
+  #top {
+    display: flex; align-items: center; gap: 10px;
+    padding: 2px 4px; flex: none;
+  }
+  #dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad);
+         transition: background .2s; flex: none; }
+  #dot.on { background: var(--ok); }
+  #status { font-size: 12px; color: var(--dim); flex: 1;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #lat { font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .iconbtn {
+    background: var(--panel); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 9px; padding: 6px 11px; font-size: 13px; flex: none;
+  }
+  .iconbtn:active { background: var(--panel-hi); }
+  .iconbtn.on { background: var(--accent); border-color: var(--accent); color: #04101f; }
+
+  /* ---- trackpad */
+  #pad {
+    flex: 1; min-height: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    position: relative;
+    overflow: hidden;
+    touch-action: none;
+  }
+  #padhint {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 7px; color: var(--dim); font-size: 13px; text-align: center;
+    pointer-events: none; transition: opacity .25s; padding: 0 24px;
+  }
+  #padhint b { color: #9aa6bd; font-weight: 600; }
+  #pad.used #padhint { opacity: 0; }
+  #ripple {
+    position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px;
+    border-radius: 50%; background: var(--accent); opacity: 0;
+    pointer-events: none; transform: scale(.4);
+  }
+  #ripple.go { animation: pop .35s ease-out; }
+  @keyframes pop {
+    0% { opacity: .35; transform: scale(.4); }
+    100% { opacity: 0; transform: scale(1.5); }
+  }
+  #dragflag {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: #04101f; font-size: 11px; font-weight: 600;
+    padding: 3px 10px; border-radius: 99px; opacity: 0; transition: opacity .15s;
+  }
+  #dragflag.on { opacity: 1; }
+
+  /* ---- button rows */
+  .row { display: flex; gap: var(--gap); flex: none; }
+  .btn {
+    flex: 1; background: var(--panel); border: 1px solid var(--line);
+    color: var(--ink); border-radius: 12px; padding: 13px 4px;
+    font-size: 13px; font-weight: 500; text-align: center;
+  }
+  .btn:active, .btn.down { background: var(--panel-hi); border-color: #3a465c; }
+  .btn.on { background: var(--accent); border-color: var(--accent); color: #04101f; }
+  .btn.wide { flex: 1.6; }
+
+  /* ---- keyboard */
+  #keys { display: none; flex-direction: column; gap: var(--gap); flex: none; }
+  #keys.open { display: flex; }
+  .krow { display: flex; gap: 6px; }
+  .key {
+    flex: 1; background: var(--panel); border: 1px solid var(--line);
+    color: var(--ink); border-radius: 9px; padding: 10px 2px;
+    font-size: 12px; font-weight: 500; min-width: 0;
+  }
+  .key:active { background: var(--panel-hi); }
+  .key.on { background: var(--accent); border-color: var(--accent); color: #04101f; }
+  #catcher {
+    position: absolute; opacity: 0; height: 1px; width: 1px;
+    left: -1000px; top: 0; border: 0; padding: 0;
+  }
+  #typed {
+    flex: none; font-size: 12px; color: var(--dim); padding: 0 4px;
+    height: 15px; white-space: nowrap; overflow: hidden;
+    direction: rtl; text-align: left;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="top">
+    <span id="dot"></span>
+    <span id="status">connecting...</span>
+    <span id="lat"></span>
+    <button class="iconbtn" id="kbtoggle">Keyboard</button>
+  </div>
+
+  <div id="pad">
+    <div id="padhint">
+      <div><b>1 finger</b> moves &middot; <b>tap</b> left click</div>
+      <div><b>double tap</b> right click &middot; <b>2-finger tap</b> middle</div>
+      <div><b>2 fingers</b> scroll &middot; <b>drag lock</b> holds left</div>
+    </div>
+    <div id="ripple"></div>
+    <div id="dragflag">dragging</div>
+  </div>
+
+  <div class="row">
+    <button class="btn" id="b1">Left</button>
+    <button class="btn" id="b2">Middle</button>
+    <button class="btn" id="b3">Right</button>
+    <button class="btn wide" id="lock">Drag lock</button>
+  </div>
+
+  <div id="typed"></div>
+
+  <div id="keys">
+    <div class="krow">
+      <button class="key mod" data-mod="ctrl">ctrl</button>
+      <button class="key mod" data-mod="alt">alt</button>
+      <button class="key mod" data-mod="shift">shift</button>
+      <button class="key mod" data-mod="super">cmd</button>
+      <button class="key" data-key="escape">esc</button>
+      <button class="key" data-key="tab">tab</button>
+    </div>
+    <div class="krow">
+      <button class="key" data-key="up">&uarr;</button>
+      <button class="key" data-key="down">&darr;</button>
+      <button class="key" data-key="left">&larr;</button>
+      <button class="key" data-key="right">&rarr;</button>
+      <button class="key" data-key="backspace">&#9003;</button>
+      <button class="key" data-key="enter">&#9166;</button>
+    </div>
+  </div>
+
+  <textarea id="catcher" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false"></textarea>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var TOKEN = "__TOKEN__";
+  var PAD = 24;                 // cushion of invisible characters in the catcher
+  var ZW = "​";
+
+  var $ = function (id) { return document.getElementById(id); };
+  var pad = $("pad"), dot = $("dot"), status = $("status"), lat = $("lat");
+  var ripple = $("ripple"), dragflag = $("dragflag"), catcher = $("catcher");
+  var typed = $("typed");
+
+  // --------------------------------------------------------- connection
+  var ws = null, ready = false, backoff = 500, pingAt = 0;
+
+  function url() {
+    var p = location.protocol === "https:" ? "wss:" : "ws:";
+    var t = TOKEN && TOKEN.indexOf("__") !== 0 ? "&t=" + encodeURIComponent(TOKEN) : "";
+    // Same /ws path as noVNC on purpose: a reverse proxy then only needs a
+    // WebSocket upgrade rule for that one path.
+    return p + "//" + location.host + "/ws?mode=pad" + t;
+  }
+
+  function connect() {
+    try { ws = new WebSocket(url()); } catch (e) { return retry(); }
+    ws.onopen = function () {
+      ready = true; backoff = 500;
+      dot.classList.add("on"); status.textContent = "connected";
+      ping();
+    };
+    ws.onclose = function () {
+      ready = false; dot.classList.remove("on");
+      status.textContent = "dropped, reconnecting..."; lat.textContent = "";
+      retry();
+    };
+    ws.onerror = function () { try { ws.close(); } catch (e) {} };
+    ws.onmessage = function (ev) {
+      var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.t === "pong") {
+        lat.textContent = Math.round(performance.now() - pingAt) + " ms";
+        setTimeout(ping, 3000);
+      } else if (m.t === "hello") {
+        status.textContent = "on " + m.display + " - " + m.screen;
+      } else if (m.t === "err") {
+        status.textContent = m.msg;
+      }
+    };
+  }
+
+  function retry() {
+    setTimeout(connect, backoff);
+    backoff = Math.min(backoff * 2, 5000);
+  }
+
+  function ping() {
+    if (!ready) return;
+    pingAt = performance.now();
+    send({ t: "ping" });
+  }
+
+  function send(o) {
+    if (ready && ws.readyState === 1) {
+      try { ws.send(JSON.stringify(o)); } catch (e) {}
+    }
+  }
+
+  // ----------------------------------------------------------- movement
+  // Accumulate the movement and send it once per animation frame. Sending one
+  // message per touchmove clogs the socket on a bad network and the cursor
+  // starts lagging behind.
+  var accX = 0, accY = 0, pending = false;
+
+  function flush() {
+    pending = false;
+    var dx = Math.round(accX), dy = Math.round(accY);
+    accX -= dx; accY -= dy;
+    if (dx || dy) send({ t: "m", x: dx, y: dy });
+  }
+
+  function moveBy(dx, dy) {
+    // Acceleration: a slow finger means precision, a fast one crosses the
+    // screen. Without it, a 1920px screen on a 6-inch trackpad would need
+    // several swipes.
+    var speed = Math.hypot(dx, dy);
+    var gain = 1.1 + Math.min(speed * 0.16, 2.6);
+    accX += dx * gain; accY += dy * gain;
+    if (!pending) { pending = true; requestAnimationFrame(flush); }
+  }
+
+  // ----------------------------------------------------------- gestures
+  var TAP_MS = 250, TAP_SLOP = 12, DBL_MS = 220;
+  var start = 0, moved = 0, fingers = 0, maxFingers = 0;
+  var last = null, dragging = false, scrollAcc = 0;
+  var tapTimer = null, tapSpot = null;
+
+  function flash(x, y) {
+    var r = pad.getBoundingClientRect();
+    ripple.style.left = (x - r.left) + "px";
+    ripple.style.top = (y - r.top) + "px";
+    ripple.classList.remove("go");
+    void ripple.offsetWidth;
+    ripple.classList.add("go");
+  }
+
+  function setDrag(on) {
+    if (on === dragging) return;
+    dragging = on;
+    dragflag.classList.toggle("on", on);
+    $("lock").classList.toggle("on", on);
+    send({ t: "b", b: 1, d: on ? 1 : 0 });
+  }
+
+  // A tap only becomes a left click after DBL_MS with no second tap - that
+  // wait is what tells "clicked" apart from "about to be a right click". The
+  // cost is the delay; the alternative would be sending the left click right
+  // away, and it would be left over every time the tap turned into a double.
+  function armTap(x, y) {
+    tapSpot = { x: x, y: y };
+    tapTimer = setTimeout(function () {
+      tapTimer = null;
+      send({ t: "c", b: 1, n: 1 });
+      flash(tapSpot.x, tapSpot.y);
+    }, DBL_MS);
+  }
+
+  function cancelTap() {
+    if (tapTimer) { clearTimeout(tapTimer); tapTimer = null; return true; }
+    return false;
+  }
+
+  pad.addEventListener("touchstart", function (e) {
+    e.preventDefault();
+    pad.classList.add("used");
+    fingers = e.touches.length;
+    maxFingers = Math.max(maxFingers, fingers);
+    if (fingers === 1) {
+      start = Date.now(); moved = 0; maxFingers = 1;
+      last = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else {
+      last = midpoint(e.touches);
+      scrollAcc = 0;
+    }
+  }, { passive: false });
+
+  pad.addEventListener("touchmove", function (e) {
+    e.preventDefault();
+    if (!last) return;
+    if (e.touches.length === 1) {
+      var t = e.touches[0];
+      var dx = t.clientX - last.x, dy = t.clientY - last.y;
+      last = { x: t.clientX, y: t.clientY };
+      moved += Math.abs(dx) + Math.abs(dy);
+      moveBy(dx, dy);
+    } else {
+      var m = midpoint(e.touches);
+      var dy2 = m.y - last.y, dx2 = m.x - last.x;
+      last = m;
+      moved += Math.abs(dx2) + Math.abs(dy2);
+      scrollAcc += dy2;
+      var step = 14;
+      while (Math.abs(scrollAcc) >= step) {
+        var up = scrollAcc > 0;
+        send({ t: "s", d: up ? "up" : "down", n: 1 });
+        scrollAcc += up ? -step : step;
+      }
+    }
+  }, { passive: false });
+
+  pad.addEventListener("touchend", function (e) {
+    e.preventDefault();
+    var quick = Date.now() - start < TAP_MS && moved < TAP_SLOP;
+    if (e.touches.length === 0) {
+      if (quick) {
+        var t0 = e.changedTouches[0];
+        if (maxFingers >= 2) {
+          // Two fingers are already the middle button; they don't count toward a double tap.
+          cancelTap();
+          send({ t: "c", b: 2, n: 1 });
+          flash(t0.clientX, t0.clientY);
+        } else if (cancelTap()) {
+          send({ t: "c", b: 3, n: 1 });   // second tap in time: right click
+          flash(t0.clientX, t0.clientY);
+        } else {
+          armTap(t0.clientX, t0.clientY);
+        }
+      }
+      last = null; fingers = 0; maxFingers = 0;
+    } else {
+      last = e.touches.length === 1
+        ? { x: e.touches[0].clientX, y: e.touches[0].clientY }
+        : midpoint(e.touches);
+    }
+  }, { passive: false });
+
+  pad.addEventListener("touchcancel", function () {
+    cancelTap();
+    last = null; fingers = 0; maxFingers = 0;
+  });
+
+  function midpoint(touches) {
+    var x = 0, y = 0;
+    for (var i = 0; i < touches.length; i++) {
+      x += touches[i].clientX; y += touches[i].clientY;
+    }
+    return { x: x / touches.length, y: y / touches.length };
+  }
+
+  // Drag lock as a button: holds the left button down and leaves the finger
+  // free to roam the trackpad as long as needed - selecting long text,
+  // moving a window.
+  $("lock").addEventListener("click", function () {
+    setDrag(!dragging);
+  });
+
+  // -------------------------------------------------------- mouse buttons
+  // Real press/release, not a click: that way you can hold the button here
+  // and drag with a finger on the trackpad at the same time.
+  [["b1", 1], ["b2", 2], ["b3", 3]].forEach(function (p) {
+    var el = $(p[0]), btn = p[1];
+    el.addEventListener("touchstart", function (e) {
+      e.preventDefault(); el.classList.add("down"); send({ t: "b", b: btn, d: 1 });
+    }, { passive: false });
+    var up = function (e) {
+      e.preventDefault(); el.classList.remove("down"); send({ t: "b", b: btn, d: 0 });
+    };
+    el.addEventListener("touchend", up, { passive: false });
+    el.addEventListener("touchcancel", up, { passive: false });
+  });
+
+  // ------------------------------------------------------------ keyboard
+  var keys = $("keys"), kbtoggle = $("kbtoggle");
+  var mods = { ctrl: false, alt: false, shift: false, super: false };
+
+  function resetCatcher() {
+    catcher.value = new Array(PAD + 1).join(ZW);
+    catcher.setSelectionRange(PAD, PAD);
+  }
+
+  function openKb() {
+    keys.classList.add("open");
+    kbtoggle.classList.add("on");
+    resetCatcher();
+    catcher.focus();
+  }
+
+  function closeKb() {
+    keys.classList.remove("open");
+    kbtoggle.classList.remove("on");
+    catcher.blur();
+  }
+
+  kbtoggle.addEventListener("click", function () {
+    keys.classList.contains("open") ? closeKb() : openKb();
+  });
+
+  function echo(s) {
+    typed.textContent = (s + " " + typed.textContent).slice(0, 120);
+  }
+
+  function activeMods() {
+    return Object.keys(mods).filter(function (k) { return mods[k]; });
+  }
+
+  function clearMods() {
+    Object.keys(mods).forEach(function (k) {
+      if (mods[k]) {
+        mods[k] = false;
+        send({ t: "mod", m: k, d: 0 });
+        var el = document.querySelector('.mod[data-mod="' + k + '"]');
+        if (el) el.classList.remove("on");
+      }
+    });
+  }
+
+  document.querySelectorAll(".mod").forEach(function (el) {
+    el.addEventListener("click", function () {
+      var m = el.dataset.mod;
+      mods[m] = !mods[m];
+      el.classList.toggle("on", mods[m]);
+      send({ t: "mod", m: m, d: mods[m] ? 1 : 0 });
+    });
+  });
+
+  document.querySelectorAll(".key[data-key]").forEach(function (el) {
+    el.addEventListener("click", function () {
+      var k = el.dataset.key;
+      send({ t: "k", k: k, mods: activeMods() });
+      echo(k);
+      clearMods();
+      resetCatcher();
+    });
+  });
+
+  // The iOS virtual keyboard barely emits useful keydown events, so read the
+  // *difference* in the textarea: it grew, text was typed; it shrank, text
+  // was deleted.
+  var prev = "";
+  catcher.addEventListener("input", function () {
+    var now = catcher.value;
+    if (now.length > prev.length && now.slice(0, prev.length) === prev) {
+      var add = now.slice(prev.length);
+      typeOut(add);
+    } else if (now.length < prev.length) {
+      var n = prev.length - now.length;
+      for (var i = 0; i < n; i++) send({ t: "k", k: "backspace", mods: [] });
+      echo("delete");
+    } else if (now !== prev) {
+      // Autocorrect replaced something in the middle: redo the diverging part.
+      var i2 = 0;
+      while (i2 < now.length && i2 < prev.length && now[i2] === prev[i2]) i2++;
+      for (var j = prev.length; j > i2; j--) send({ t: "k", k: "backspace", mods: [] });
+      typeOut(now.slice(i2));
+    }
+    prev = now;
+    if (now.length < 4 || now.length > 400) { resetCatcher(); prev = catcher.value; }
+  });
+
+  function typeOut(s) {
+    s = s.split(ZW).join("");
+    if (!s) return;
+    var mm = activeMods();
+    if (mm.length && s.length === 1) {
+      send({ t: "k", k: s, mods: mm });   // ctrl+c and friends
+      clearMods();
+    } else {
+      send({ t: "type", s: s });
+    }
+    echo(s);
+  }
+
+  catcher.addEventListener("keydown", function (e) {
+    var map = { Enter: "enter", Backspace: "backspace", Tab: "tab", Escape: "escape",
+                ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+    var k = map[e.key];
+    if (k) {
+      e.preventDefault();
+      send({ t: "k", k: k, mods: activeMods() });
+      echo(k); clearMods(); resetCatcher(); prev = catcher.value;
+    }
+  });
+
+  catcher.addEventListener("blur", function () {
+    if (keys.classList.contains("open")) {
+      // iOS sometimes closes the keyboard on its own; if the panel is still
+      // open, the user still wants to type.
+      setTimeout(function () {
+        if (keys.classList.contains("open")) { resetCatcher(); catcher.focus(); }
+      }, 60);
+    }
+  });
+
+  // Safari's double tap still tries to zoom in some places outside the pad.
+  document.addEventListener("gesturestart", function (e) { e.preventDefault(); });
+  document.addEventListener("dblclick", function (e) { e.preventDefault(); });
+
+  // The screen going dark mid-drag would leave the button stuck on the other side.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { if (dragging) setDrag(false); clearMods(); }
+  });
+
+  resetCatcher(); prev = catcher.value;
+  connect();
+})();
+</script>
+</body>
+</html>

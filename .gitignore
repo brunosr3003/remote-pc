@@ -1,0 +1,9 @@
+# Secrets - never commit
+etc/*
+!etc/.gitkeep
+
+# noVNC is fetched by scripts/get-novnc.sh
+novnc/
+
+__pycache__/
+*.pyc

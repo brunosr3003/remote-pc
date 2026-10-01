@@ -1,0 +1,27 @@
+[Unit]
+Description=remote-pc - SSH reverse tunnel to a VPS (optional)
+After=network-online.target remote-web.service
+Wants=remote-web.service
+
+[Service]
+Type=simple
+# Publishes 127.0.0.1:8786 on the VPS as 127.0.0.1:8787. Put nginx/Caddy
+# with TLS in front of it on the VPS. Use a dedicated account with a nologin
+# shell so the key can only forward ports.
+#
+# -N: no remote command, only forwarding.
+# ExitOnForwardFailure: if the remote port can't be opened, die instead of
+#   staying up pretending to work.
+# ServerAlive*: drop quickly when the home network goes down, so Restart
+#   brings it back.
+ExecStart=/usr/bin/ssh -N -i %h/.ssh/tunnel_vps \
+  -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -o StrictHostKeyChecking=accept-new \
+  -R 127.0.0.1:8787:127.0.0.1:8786 \
+  tunnel@your-vps.example.com
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
